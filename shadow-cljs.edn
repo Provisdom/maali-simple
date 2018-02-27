@@ -1,5 +1,6 @@
 ;; shadow-cljs configuration
-{:source-paths
+{:lein {:profile "dev"}
+ :source-paths
  ["src"]
 
  :dependencies
@@ -21,4 +22,4 @@
                    :http-port 8080
                    :after-load provisdom.simple.app/foo}}}
  :nrepl {:port 9999
-         :middleware []}}       
+         :middleware []}}
