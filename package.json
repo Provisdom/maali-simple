@@ -1,0 +1,14 @@
+{
+  "name": "maali-simple",
+  "version": "1.0.0",
+  "description": "Foo",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Moi",
+  "license": "MIT",
+  "devDependencies": {
+    "shadow-cljs": "^2.1.26"
+  }
+}
