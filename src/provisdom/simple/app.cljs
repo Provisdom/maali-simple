@@ -1,11 +1,59 @@
 (ns provisdom.simple.app
-  (:require [provisdom.maali.rules :refer-macros [defsession] :as rules]
-            [provisdom.simple.rules :as simple]))
+  (:require [provisdom.maali.common :as common]
+            [provisdom.simple.rules :as simple]
+            [provisdom.simple.view :as view]
+            [provisdom.maali.rules :refer-macros [defsession] :as rules]))
+
+#_(st/instrument)
 
 (enable-console-print!)
 
-(defn foo
-  []
-  (.log js/console "OGGY"))
+(declare init-session)
 
-(foo)
+(defonce session-atom (atom nil))
+
+(defn response-fn
+  [spec response]
+  (swap! session-atom common/handle-response [spec response]))
+
+(defonce history (atom []))
+
+(defn history-response-fn
+  [spec response]
+  (swap! history conj [spec response])
+  (response-fn spec response))
+
+(defn init-session
+  [session]
+  (reset! common/request-id 0)
+  (let [session (-> session
+                    (rules/insert ::simple/Player {::simple/marker :x})
+                    (rules/insert ::simple/Player {::simple/marker :o})
+                    (rules/insert ::simple/CurrentPlayer {::simple/marker :x})
+                    (rules/insert ::common/ResponseFunction {::common/response-fn response-fn}))
+        squares (map (fn [p] #::simple{:position p :marker nil}) (range 9))
+        session (apply rules/insert session ::simple/Square squares)]
+    (rules/fire-rules session)))
+
+;;; HACK - is there a better way to call init-session and view/run only on load?
+(defonce hackorama
+         (do
+           (reset! session-atom (init-session simple/session))
+           ;;; Comment out view/run to run tests headless
+           (view/run session-atom)))
+
+
+;;; Uncomment to run tests. First argument is the number
+;;; of app-level responses simulated, second is delay in
+;;; milliseconds between responses.
+#_(test/abuse session-atom 1000 20)
+
+(defn reload
+  []
+  (time
+    (when (not-empty @history)
+      (println "REPLAYING")
+      (reset! session-atom (init-session simple/session))
+      (doseq [[spec response] @history]
+        (response-fn spec response))
+      (println "REPLAYED" (count @history)))))
