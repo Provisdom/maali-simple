@@ -20,6 +20,7 @@
         :modules {:main {:entries [provisdom.simple.app]}}
         :devtools {:http-root "public"
                    :http-port 8080
-                   :after-load provisdom.simple.app/foo}}}
+                   :after-load provisdom.simple.app/foo
+                   :hud false}}}
  :nrepl {:port 9999
          :middleware []}}

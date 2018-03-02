@@ -82,11 +82,15 @@ button {
 .tile {
   width: 100px;
   height: 100px;
-  background: #eee;
-  border: 2px solid black;
+  background: #ddd;
   line-height: 100%;
+  border: 2px solid black;
   text-align: center;
   font-size: 3em;
+}
+
+.clickable {
+  background: white;
   cursor: pointer;
 }
 
