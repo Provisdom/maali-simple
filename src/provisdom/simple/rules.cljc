@@ -14,6 +14,8 @@
 (s/def ::WinningSquare (s/keys :req [::position]))
 (s/def ::CatsGame (s/keys))
 (s/def ::GameOver (s/keys))
+(s/def ::teaching-mode boolean?)
+(s/def ::TeachingMode (s/keys :req [::teaching-mode]))
 
 (def-derive ::MoveRequest ::common/Request (s/keys :req [::position ::player]))
 (def-derive ::MoveResponse ::common/Response (s/keys :req [::position ::player]))
@@ -65,20 +67,18 @@
    [:not [::GameOver]]
    [::CurrentPlayer (= ?player player)]
    [?moves <- (acc/all) :from [::Move]]
+   [::TeachingMode (= ?teaching-mode teaching-mode)]
    [::common/ResponseFunction (= ?response-fn response-fn)]
    =>
-   (let [empty-positions (set/difference (set (range 9)) (set (map ::position ?moves)))
+   (let [all-positions (set (range 9))
+         empty-positions (set/difference  all-positions (set (map ::position ?moves)))
          requests (map #(common/request {::position % ::player ?player} ::MoveResponse ?response-fn) empty-positions)]
-     ;;; Uncomment this to treat both players equally, making requests for
-     ;;; all empty squares.
-     #_(apply rules/insert! ::MoveRequest requests)
-     ;;; Uncomment this for "training mode", where the computer is presented
-     ;;; requests for all empty squares, but the human player is only allowed
-     ;;; to select an optimal move.
-     (condp = ?player
-       :x (apply rules/insert! ::MoveRequest requests)
-       :o (when-let [optimal-moves (set (ai/optimal-moves (squares->board ?moves) :o 0))]
-            (apply rules/insert! ::MoveRequest (filter (fn [%] (optimal-moves (::position %))) requests)))))]
+     (if ?teaching-mode
+       (condp = ?player
+         :x (apply rules/insert! ::MoveRequest requests)
+         :o (when-let [optimal-moves (set (ai/optimal-moves (squares->board ?moves) :o 0))]
+              (apply rules/insert! ::MoveRequest (filter (fn [%] (optimal-moves (::position %))) requests))))
+       (apply rules/insert! ::MoveRequest requests)))]
 
   [::move-response!
    "Handle response to ::MoveRequest by inserting a new ::Move and switch
@@ -120,4 +120,4 @@
   [::winning-square [:?position] [?winning-square <- ::WinningSquare (= ?position position)]]
   [::game-over [] [?game-over <- ::GameOver]])
 
-(defsession session [common/rules rules queries])
+(defsession session [#_common/rules rules queries])
