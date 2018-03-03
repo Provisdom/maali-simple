@@ -9,6 +9,8 @@
   (when request
     #(common/respond-to request request)))
 
+;;; Markup and styling from https://codepen.io/leesharma/pen/XbBGEj
+
 (defn tile
   [session position]
   (let [c (click-handler (common/query-one :?request session ::simple/move-request :?position position :?player :o))
@@ -59,8 +61,6 @@
      [:p "Welcome to Tic-Tac-Toe! The objective of this game is to get three of your symbol (either X or O) in a row vertically, horizontally, or diagonally."]
 
      [:p "Good luck!"]]))
-
-
 
 (defn ^:export run [session-atom]
   (rum/mount (app session-atom) (js/document.getElementById "app")))

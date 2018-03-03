@@ -34,8 +34,9 @@
 
 (defrules rules
   [::winner!
-   [?moves <- (acc/all) :from [::Move]]
-   [::CurrentPlayer (= ?player (next-player player))]
+   "For all the moves made by a player, if any contains a win then set
+    the ::Winner fact and mark the winning squares."
+   [?moves <- (acc/all) :from [::Move (= ?player player)]]
    [:test (< 0 (ai/score-board (squares->board ?moves) ?player 0))]
    =>
    (let [player-positions (set (map ::position (filter #(= ?player (::player %)) ?moves)))
@@ -45,6 +46,7 @@
      (rules/insert! ::Winner {::player ?player}))]
 
   [::cats-game!
+   "If nobody won and all of the squares have been used, it's a ::CatsGame."
    [:not [::Winner]]
    [?count <- (acc/count) :from [::Move]]
    [:test (apply = [9 ?count])] ;Not using = here due to clara-rules issue #357
@@ -52,11 +54,14 @@
    (rules/insert! ::CatsGame {})]
 
   [::game-over!
+   "Game is over if either there is a ::Winner or ::CatsGame."
    [:or [::Winner] [::CatsGame]]
    =>
    (rules/insert! ::GameOver {})]
 
   [::move-request!
+   "If the game isn't over, request ::Moves from the ::CurrentPlayer for
+    eligible squares."
    [:not [::GameOver]]
    [::CurrentPlayer (= ?player player)]
    [?moves <- (acc/all) :from [::Move]]
@@ -64,13 +69,20 @@
    =>
    (let [empty-positions (set/difference (set (range 9)) (set (map ::position ?moves)))
          requests (map #(common/request {::position % ::player ?player} ::MoveResponse ?response-fn) empty-positions)]
+     ;;; Uncomment this to treat both players equally, making requests for
+     ;;; all empty squares.
      #_(apply rules/insert! ::MoveRequest requests)
+     ;;; Uncomment this for "training mode", where the computer is presented
+     ;;; requests for all empty squares, but the human player is only allowed
+     ;;; to select an optimal move.
      (condp = ?player
        :x (apply rules/insert! ::MoveRequest requests)
-       :o (when-let [optimal-move (first (ai/optimal-moves (squares->board ?moves) :o 0))]
-            (rules/insert! ::MoveRequest (some #(when (= optimal-move (::position %)) %) requests)))))]
+       :o (when-let [optimal-moves (set (ai/optimal-moves (squares->board ?moves) :o 0))]
+            (apply rules/insert! ::MoveRequest (filter (fn [%] (optimal-moves (::position %))) requests)))))]
 
   [::move-response!
+   "Handle response to ::MoveRequest by inserting a new ::Move and switch
+    ::CurrentPlayer to the opponent."
    [?request <- ::MoveRequest (= ?position position)]
    [::MoveResponse (= ?request Request) (= ?position position) (= ?player player)]
    [?current-player <- ::CurrentPlayer]
@@ -79,6 +91,7 @@
    (rules/upsert! ::CurrentPlayer ?current-player assoc ::player (next-player ?player))]
 
   [::reset-board-request!
+   "Request to reset the game."
    [?moves <- (acc/all) :from [::Move]]
    [:test (not-empty ?moves)]
    [::common/ResponseFunction (= ?response-fn response-fn)]
@@ -86,6 +99,8 @@
    (rules/insert! ::ResetBoardRequest (common/request ::common/Response ?response-fn))]
 
   [::reset-board-response!
+   "Handle response for game reset, retract all existing ::Move's and
+    ::MoveRequest's, make :x the ::CurrentPlayer."
    [?request <- ::ResetBoardRequest]
    [::common/Response (= ?request Request)]
    [?moves <- (acc/all) :from [::Move]]
@@ -97,12 +112,12 @@
    (rules/upsert! ::CurrentPlayer ?current-player assoc ::player :x)])
 
 (defqueries queries
-  [::move [:?position] [?move <- ::Move (= ?position position) (= ?player player)]]
-  [::winning-square [:?position] [?winning-square <- ::WinningSquare (= ?position position)]]
-  [::winner [] [?winner <- ::Winner (= ?player player)]]
-  [::game-over [] [?game-over <- ::GameOver]]
-  [::current-player [] [::CurrentPlayer (= ?player player)]]
   [::move-request [:?position :?player] [?request <- ::MoveRequest (= ?position position) (= ?player player)]]
-  [::reset-request [] [?request <- ::ResetBoardRequest]])
+  [::reset-request [] [?request <- ::ResetBoardRequest]]
+  [::current-player [] [::CurrentPlayer (= ?player player)]]
+  [::move [:?position] [?move <- ::Move (= ?position position) (= ?player player)]]
+  [::winner [] [?winner <- ::Winner (= ?player player)]]
+  [::winning-square [:?position] [?winning-square <- ::WinningSquare (= ?position position)]]
+  [::game-over [] [?game-over <- ::GameOver]])
 
 (defsession session [common/rules rules queries])
