@@ -40,10 +40,20 @@
         #_(println opponent-marker opponent-move score)
         score))))
 
-(defn choose-move*
+(defn optimal-moves*
   [board marker depth]
   (let [empty-positions (set/difference (set (range 9)) (set (keys board)))
         scores (into {} (map (fn [p] [p (score-move board marker p depth)]) empty-positions))]
-    (first (reduce (fn [[p-max s-max] [p s]] (if (> s s-max) [p s] [p-max s-max])) [-1 -100] scores))))
+    (first (reduce (fn [[p-max s-max] [p s]]
+                     (cond
+                       (> s s-max) [[p] s]
+                       (= s s-max) [(conj p-max p) s]
+                       :else [p-max s-max]))
+                   [[] -100] scores))))
 
-(def choose-move (memoize choose-move*))
+(def optimal-moves (memoize optimal-moves*))
+
+(defn choose-move
+  [board marker depth]
+  (when-let [optimal-moves (not-empty (optimal-moves board marker depth))]
+    (rand-nth optimal-moves)))

@@ -28,13 +28,20 @@
   (let [session (rum/react session-atom)
         tiles (map #(into [:tr] (map (partial tile session)) %) (partition 3 3 (range 9)))
         reset-request (common/query-one :?request session ::simple/reset-request)
-        current-player (common/query-one :?marker session ::simple/current-player)]
+        current-player (common/query-one :?marker session ::simple/current-player)
+        game-over (common/query-one :?game-over session ::simple/game-over)
+        winner (common/query-one :?marker session ::simple/winner)]
     [:div
      [:h1 "Tic-Tac-Toe"]
-     [:h2 (condp = current-player
-            :x "I'm thinking - don't rush me!"
-            :o "Your move hooman."
-            "Uh-oh")]
+     [:h2 (if game-over
+            (condp = winner
+              :x "X wins - BOW TO YOUR COMPUTER OVERLORD!"
+              :o "O wins - I think I've been Kobayashi Maru'd"
+              "You are most logical, hooman.")
+            (condp = current-player
+             :x "I'm thinking - don't rush me!"
+             :o "Your move hooman."
+             "Uh-oh"))]
 
      [:div {:id "left"}]
      [:div {:id "right"}]

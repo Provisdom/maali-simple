@@ -3,7 +3,8 @@
             [provisdom.simple.ai :as ai]
             [provisdom.simple.rules :as simple]
             [provisdom.simple.view :as view]
-            [provisdom.maali.rules :refer-macros [defsession] :as rules]))
+            [provisdom.maali.rules :refer-macros [defsession] :as rules]
+            [clojure.set :as set]))
 
 #_(st/instrument)
 
@@ -36,6 +37,7 @@
         session (apply rules/insert session ::simple/Square squares)]
     (rules/fire-rules session)))
 
+(def smart-ai true)
 ;;; HACK - is there a better way to call init-session and view/run only on load?
 (defonce hackorama
          (do
@@ -46,10 +48,12 @@
                            (when (not-empty (rules/query-partial session ::simple/move-request :?marker :x))
                             (let [moves (map :?move (rules/query-partial session ::simple/move))
                                   board (simple/squares->board moves)
-                                  next-move (ai/choose-move board :x 0)
+                                  next-move (if smart-ai
+                                              (ai/choose-move board :x 0)
+                                              (rand-nth (vec (set/difference (set (range 9)) (set (keys board))))))
                                   move-request (common/query-one :?request session ::simple/move-request :?position next-move :?marker :x)]
                               (common/respond-to move-request move-request))))
-                         2000)))
+                         0000)))
 
 
            (reset! session-atom (init-session simple/session))

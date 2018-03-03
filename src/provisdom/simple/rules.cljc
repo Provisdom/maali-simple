@@ -32,25 +32,6 @@
     (println (map (fn [[_ v]] (or v :.)) row))))
 
 (defrules rules
-  [::move-request!
-   [:not [::GameOver]]
-   [?current-player <- ::CurrentPlayer (= ?player Player)]
-   [?square <- ::Square]
-   [:not [::Move (= ?square Square)]]
-   [::common/ResponseFunction (= ?response-fn response-fn)]
-   =>
-   (rules/insert! ::MoveRequest (common/request {::Square ?square ::Player ?player} ::MoveResponse ?response-fn))]
-
-  [::move-response!
-   [?request <- ::MoveRequest (= ?square Square)]
-   [::MoveResponse (= ?request Request) (= ?square Square) (= ?player Player)]
-   [?player <- ::Player (= ?marker marker)]
-   [?current-player <- ::CurrentPlayer]
-   [?next-player <- ::Player (not=  ?marker marker)]
-   =>
-   (rules/insert-unconditional! ::Move {::Square ?square ::Player ?player})
-   (rules/upsert! ::CurrentPlayer ?current-player assoc ::Player ?next-player)]
-
   [::winner!
    [?moves <- (acc/all) :from [::Move]]
    [?player <- ::Player (= ?marker marker)]
@@ -65,15 +46,59 @@
   [::cats-game!
    [:not [::Winner]]
    [?count <- (acc/count) :from [::Move]]
-   [:test (= 9 ?count)]
+   [:test (apply = [9 ?count])] ;Not using = here due to clara-rules issue #357
    =>
    (rules/insert! ::CatsGame {})]
 
   [::game-over!
-   [::Winner]
+   [:or [::Winner] [::CatsGame]]
    =>
-   (println "GAME OVER")
    (rules/insert! ::GameOver {})]
+
+  [::move-request!
+   [:not [::GameOver]]
+   [?current-player <- ::CurrentPlayer (= ?player Player)]
+   [?square <- ::Square (= ?position position)]
+   [:not [::Move (= ?square Square)]]
+   [::common/ResponseFunction (= ?response-fn response-fn)]
+   #_[?moves <- (acc/all) :from [::Move]]
+   #_[?player <- ::Player (= ?marker marker)]
+   =>
+   (rules/insert! ::MoveRequest (common/request {::Square ?square ::Player ?player} ::MoveResponse ?response-fn))
+   #_(condp = ?marker
+       :x (rules/insert! ::MoveRequest (common/request {::Square ?square ::Player ?player} ::MoveResponse ?response-fn))
+       :o (when (= ?position (first (ai/optimal-moves (squares->board ?moves) :o 0)))
+            (rules/insert! ::MoveRequest (common/request {::Square ?square ::Player ?player} ::MoveResponse ?response-fn))))]
+
+  #_[::computer-move-request!
+     [:not [::GameOver]]
+     [?current-player <- ::CurrentPlayer (= ?player Player)]
+     [?player <- ::Player (= :x marker)]
+     [?square <- ::Square]
+     [:not [::Move (= ?square Square)]]
+     [::common/ResponseFunction (= ?response-fn response-fn)]
+     =>
+     (rules/insert! ::MoveRequest (common/request {::Square ?square ::Player ?player} ::MoveResponse ?response-fn))]
+
+  #_[::hooman-move-request!
+     [:not [::GameOver]]
+     [?current-player <- ::CurrentPlayer (= ?player Player)]
+     [?player <- ::Player (= :o marker)]
+     [?moves <- (acc/all) :from [::Move]]
+     [::common/ResponseFunction (= ?response-fn response-fn)]
+     =>
+     (when-let [optimal-move (ai/choose-move (squares->board ?moves) :o 0)]
+       (rules/insert! ::MoveRequest (common/request {::Square {::position optimal-move} ::Player ?player} ::MoveResponse ?response-fn)))]
+
+  [::move-response!
+   [?request <- ::MoveRequest (= ?square Square)]
+   [::MoveResponse (= ?request Request) (= ?square Square) (= ?player Player)]
+   [?player <- ::Player (= ?marker marker)]
+   [?current-player <- ::CurrentPlayer]
+   [?next-player <- ::Player (not=  ?marker marker)]
+   =>
+   (rules/insert-unconditional! ::Move {::Square ?square ::Player ?player})
+   (rules/upsert! ::CurrentPlayer ?current-player assoc ::Player ?next-player)]
 
   [::reset-board-request!
    [?moves <- (acc/all) :from [::Move]]
@@ -101,7 +126,7 @@
    [?square <- ::Square (= ?position position)]
    [?player <- ::Player (= ?marker marker)]]
   [::winning-square [:?position] [::WinningSquare (= ?square Square)] [?square <- ::Square (= ?position position)]]
-  [::winner [] [?winner <- ::Winner]]
+  [::winner [] [?winner <- ::Winner (= ?player Player)] [?player <- ::Player (= ?marker marker)]]
   [::game-over [] [?game-over <- ::GameOver]]
   [::current-player
    []
