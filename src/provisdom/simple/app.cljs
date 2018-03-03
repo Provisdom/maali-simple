@@ -28,14 +28,10 @@
 (defn init-session
   [session]
   (reset! common/request-id 0)
-  (let [session (-> session
-                    (rules/insert ::simple/Player {::simple/marker :x})
-                    (rules/insert ::simple/Player {::simple/marker :o})
-                    (rules/insert ::simple/CurrentPlayer {::simple/Player {::simple/marker :x}})
-                    (rules/insert ::common/ResponseFunction {::common/response-fn response-fn}))
-        squares (map (fn [p] #::simple{:position p}) (range 9))
-        session (apply rules/insert session ::simple/Square squares)]
-    (rules/fire-rules session)))
+  (-> session
+      (rules/insert ::simple/CurrentPlayer {::simple/player :x})
+      (rules/insert ::common/ResponseFunction {::common/response-fn response-fn})
+      (rules/fire-rules)))
 
 (def smart-ai true)
 ;;; HACK - is there a better way to call init-session and view/run only on load?
@@ -45,15 +41,15 @@
                       (fn [_ _ _ session]
                         (js/setTimeout
                          (fn [_]
-                           (when (not-empty (rules/query-partial session ::simple/move-request :?marker :x))
+                           (when (not-empty (rules/query-partial session ::simple/move-request :?player :x))
                             (let [moves (map :?move (rules/query-partial session ::simple/move))
                                   board (simple/squares->board moves)
                                   next-move (if smart-ai
                                               (ai/choose-move board :x 0)
                                               (rand-nth (vec (set/difference (set (range 9)) (set (keys board))))))
-                                  move-request (common/query-one :?request session ::simple/move-request :?position next-move :?marker :x)]
+                                  move-request (common/query-one :?request session ::simple/move-request :?position next-move :?player :x)]
                               (common/respond-to move-request move-request))))
-                         0000)))
+                         1000)))
 
 
            (reset! session-atom (init-session simple/session))

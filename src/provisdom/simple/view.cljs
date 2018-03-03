@@ -11,9 +11,9 @@
 
 (defn tile
   [session position]
-  (let [c (click-handler (common/query-one :?request session ::simple/move-request :?position position :?marker :o))
-        marker (common/query-one :?marker session ::simple/move :?position position)
-        win? (common/query-one :?square session ::simple/winning-square :?position position)]
+  (let [c (click-handler (common/query-one :?request session ::simple/move-request :?position position :?player :o))
+        marker (common/query-one :?player session ::simple/move :?position position)
+        win? (common/query-one :?winning-square session ::simple/winning-square :?position position)]
     [:td {:id (str position)
           :class (cond-> "tile"
                    win? (str " winningTile")
@@ -28,9 +28,9 @@
   (let [session (rum/react session-atom)
         tiles (map #(into [:tr] (map (partial tile session)) %) (partition 3 3 (range 9)))
         reset-request (common/query-one :?request session ::simple/reset-request)
-        current-player (common/query-one :?marker session ::simple/current-player)
+        current-player (common/query-one :?player session ::simple/current-player)
         game-over (common/query-one :?game-over session ::simple/game-over)
-        winner (common/query-one :?marker session ::simple/winner)]
+        winner (common/query-one :?player session ::simple/winner)]
     [:div
      [:h1 "Tic-Tac-Toe"]
      [:h2 (if game-over
