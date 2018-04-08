@@ -93,6 +93,7 @@
   [::reset-board-request!
    "Request to reset the game."
    [?moves <- (acc/all) :from [::Move]]
+   [::CurrentPlayer (= :o player)]
    [:test (not-empty ?moves)]
    [::common/ResponseFunction (= ?response-fn response-fn)]
    =>
