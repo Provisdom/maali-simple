@@ -13,9 +13,9 @@
 
 (defn tile
   [session position]
-  (let [c (click-handler (common/query-one :?request session ::simple/move-request :?position position :?player :o))
-        marker (common/query-one :?player session ::simple/move :?position position)
-        win? (common/query-one :?winning-square session ::simple/winning-square :?position position)]
+  (let [c (click-handler (rules/query-one :?request session ::simple/move-request :?position position :?player :o))
+        marker (rules/query-one :?player session ::simple/move :?position position)
+        win? (rules/query-one :?winning-square session ::simple/winning-square :?position position)]
     [:td {:id (str position)
           :class (cond-> "tile"
                    win? (str " winningTile")
@@ -29,17 +29,17 @@
 (rum/defc app < rum/reactive [session-atom]
   (let [session (rum/react session-atom)
         tiles (map #(into [:tr] (map (partial tile session)) %) (partition 3 3 (range 9)))
-        reset-request (common/query-one :?request session ::simple/reset-request)
-        current-player (common/query-one :?player session ::simple/current-player)
-        game-over (common/query-one :?game-over session ::simple/game-over)
-        winner (common/query-one :?player session ::simple/winner)]
+        reset-request (rules/query-one :?request session ::simple/reset-request)
+        current-player (rules/query-one :?player session ::simple/current-player)
+        game-over (rules/query-one :?game-over session ::simple/game-over)
+        winner (rules/query-one :?player session ::simple/winner)]
     [:div
      [:h1 "Tic-Tac-Toe"]
      [:h2 (if game-over
             (condp = winner
               :x "X wins - BOW TO YOUR COMPUTER OVERLORD!"
               :o "O wins - I think I've been Kobayashi Maru'd"
-              "You are most logical, hooman.")
+              "Tie game. You are most logical, hooman.")
             (condp = current-player
              :x "I'm thinking - don't rush me!"
              :o "Your move hooman."

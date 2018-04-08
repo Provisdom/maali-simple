@@ -99,16 +99,14 @@
    (rules/insert! ::ResetBoardRequest (common/request ::common/Response ?response-fn))]
 
   [::reset-board-response!
-   "Handle response for game reset, retract all existing ::Move's and
-    ::MoveRequest's, make :x the ::CurrentPlayer."
+   "Handle response for game reset, retract all existing ::Move's,
+    make :x the ::CurrentPlayer."
    [?request <- ::ResetBoardRequest]
    [::common/Response (= ?request Request)]
    [?moves <- (acc/all) :from [::Move]]
-   [?move-requests <- (acc/all) :from [::MoveRequest]]
    [?current-player <- ::CurrentPlayer]
    =>
    (apply rules/retract! ::Move ?moves)
-   (apply rules/retract! ::MoveRequest ?move-requests)
    (rules/upsert! ::CurrentPlayer ?current-player assoc ::player :x)])
 
 (defqueries queries
