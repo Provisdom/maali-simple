@@ -1,122 +1,145 @@
 (ns provisdom.simple.rules
-  (:require [clojure.spec.alpha :as s]
-            [clojure.set :as set]
-            [provisdom.simple.ai :as ai]
-            [clara.rules.accumulators :as acc]
-            [provisdom.maali.rules #?(:clj :refer :cljs :refer-macros) [defrules defqueries defsession def-derive] :as rules]
+  (:require [provisdom.simple.ai :as ai]
             [provisdom.maali.common :as common]))
 
-(s/def ::player #{:x :o})
-(s/def ::position (s/int-in 0 9))
-(s/def ::Move (s/keys :req [::player ::position]))
-(s/def ::CurrentPlayer (s/keys :req [::player]))
-(s/def ::Winner (s/keys :req [::player]))
-(s/def ::WinningSquare (s/keys :req [::position]))
-(s/def ::CatsGame (s/keys))
-(s/def ::GameOver (s/keys))
-(s/def ::teaching-mode boolean?)
-(s/def ::TeachingMode (s/keys :req [::teaching-mode]))
+(def schema
+  {::square       {:db/cardinality :db.cardinality/many
+                   :db/valueType :db.type/ref}
+   ::played-by {:db/valueType :db.type/ref}
+   ::player {:db/cardinality :db.cardinality/many
+             :db/valueType :db.type/ref}
+   ::current-player {:db/valueType :db.type/ref}
+   ::marker {:db/unique :db.unique/identity}
+   ::position     {:db/unique :db.unique/identity}
+   ::move-request {:db/cardinality :db.cardinality/many
+                   :db/valueType :db.type/ref}})
 
-(def-derive ::MoveRequest ::common/Request (s/keys :req [::position ::player]))
-(def-derive ::MoveResponse ::common/Response (s/keys :req [::position ::player]))
-(def-derive ::ResetBoardRequest ::common/Request)
+(def initial-board
+  {::player [{::marker :x}
+             {::marker :o}]
+   ::current-player [::marker :o]
+   ::square (mapv (fn [i] {::position i}) (range 9))
+   ::response-fn identity})
 
 (defn squares->board
   [squares]
   (reduce (fn [b {::keys [player position]}] (assoc b position player)) (sorted-map) squares))
 
-(defn print-board
-  [board]
-  (doseq [row (partition 3 3 board)]
-    (println (map (fn [[_ v]] (or v :.)) row))))
+(defn winner?
+  [db marker squares]
+  (println "*********" squares)
+  (< 0 (ai/score-board (squares->board (map #(hash-map ::position % ::player marker) squares)) marker 0)))
 
-(defn next-player
-  [player]
-  (condp = player :x :o :o :x))
+(def rules
+  {::empty-squares
+   {:query  '[:find ?board (distinct ?square)
+              :where
+              [?board ::square ?square]
+              (not [?square ::played-by _])]
+    :rhs-fn (fn [?board empty-squares]
+              [{:db/id ?board ::empty-squares empty-squares}])}
 
-(defrules rules
-  [::winner!
-   "For all the moves made by a player, if any contains a win then set
-    the ::Winner fact and mark the winning squares."
-   [?moves <- (acc/all) :from [::Move (= ?player player)]]
-   [:test (< 0 (ai/score-board (squares->board ?moves) ?player 0))]
-   =>
-   (let [player-positions (set (map ::position (filter #(= ?player (::player %)) ?moves)))
-         winning-positions (some #(when (= 3 (count %)) %) (map (partial set/intersection player-positions) ai/winning-indices))]
-     (doseq [position winning-positions]
-       (rules/insert! ::WinningSquare {::position position}))
-     (rules/insert! ::Winner {::player ?player}))]
+   ::player-squares
+   {:query  '[:find ?player (distinct ?position)
+              :where
+              [?board ::player ?player]
+              [?board ::square ?square]
+              [?square ::position ?position]
+              [?square ::played-by ?player]]
+    :rhs-fn (fn [?player player-squares]
+              [{:db/id ?player ::squares player-squares}])}
 
-  [::cats-game!
-   "If nobody won and all of the squares have been used, it's a ::CatsGame."
-   [:not [::Winner]]
-   [?count <- (acc/count) :from [::Move]]
-   [:test (apply = [9 ?count])] ;Not using = here due to clara-rules issue #357
-   =>
-   (rules/insert! ::CatsGame {})]
+   ::winner
+   {:query  '[:find ?board ?player
+              :where
+              [?board ::player ?player]
+              [?player ::squares ?squares]
+              [?player ::marker ?marker]
+              [(provisdom.simple.rules/winner? $ ?marker ?squares)]]
+    :rhs-fn (fn [?board ?player]
+              [{:db/id ?board ::winner ?player}])}
 
-  [::game-over!
-   "Game is over if either there is a ::Winner or ::CatsGame."
-   [:or [::Winner] [::CatsGame]]
-   =>
-   (rules/insert! ::GameOver {})]
+   ::cats-game
+   {:query  '[:find ?board
+              :where
+              [?board ::empty-count ?empty-count]
+              [(= 9 ?empty-count)]
+              (not [?board ::winner _])]
+    :rhs-fn (fn [?board]
+              [{:db/id ?board ::cats-game true}])}
 
-  [::move-request!
-   "If the game isn't over, request ::Moves from the ::CurrentPlayer for
-    eligible squares."
-   [:not [::GameOver]]
-   [::CurrentPlayer (= ?player player)]
-   [?moves <- (acc/all) :from [::Move]]
-   [::TeachingMode (= ?teaching-mode teaching-mode)]
-   [::common/ResponseFunction (= ?response-fn response-fn)]
-   =>
-   (let [all-positions (set (range 9))
-         empty-positions (set/difference  all-positions (set (map ::position ?moves)))
-         requests (map #(common/request {::position % ::player ?player} ::MoveResponse ?response-fn) empty-positions)]
-     (if ?teaching-mode
-       (condp = ?player
-         :x (apply rules/insert! ::MoveRequest requests)
-         :o (when-let [optimal-moves (set (ai/optimal-moves (squares->board ?moves) :o 0))]
-              (apply rules/insert! ::MoveRequest (filter (fn [%] (optimal-moves (::position %))) requests))))
-       (apply rules/insert! ::MoveRequest requests)))]
+   ::game-over
+   {:query  '[:find ?board
+              :where
+              (or [?board ::winner _]
+                  [?board ::cats-game true])]
+    :rhs-fn (fn [?board]
+              [{:db/id ?board ::game-over true}])}
 
-  [::move-response!
-   "Handle response to ::MoveRequest by inserting a new ::Move and switch
-    ::CurrentPlayer to the opponent."
-   [?request <- ::MoveRequest (= ?position position)]
-   [::MoveResponse (= ?request Request) (= ?position position) (= ?player player)]
-   [?current-player <- ::CurrentPlayer]
-   =>
-   (rules/insert-unconditional! ::Move {::position ?position ::player ?player})
-   (rules/upsert! ::CurrentPlayer ?current-player assoc ::player (next-player ?player))]
+   ::move-request
+   {:query  '[:find ?board ?marker ?position ?response-fn
+              :where
+              [?board ::current-player ?player]
+              [?player ::marker ?marker]
+              [?board ::square ?square]
+              [?square ::position ?position]
+              (not [?square ::played-by _])
+              (not [?board ::game-over true])
+              [?board ::response-fn ?response-fn]]
+    :rhs-fn (fn [?board ?marker ?position ?response-fn]
+              [{:db/id         ?board
+                ::move-request {:request/marker             ?marker
+                                :request/position           ?position
+                                ::common/response-fn ?response-fn}}])}
 
-  [::reset-board-request!
-   "Request to reset the game."
-   [?moves <- (acc/all) :from [::Move]]
-   [::CurrentPlayer (= :o player)]
-   [:test (not-empty ?moves)]
-   [::common/ResponseFunction (= ?response-fn response-fn)]
-   =>
-   (rules/insert! ::ResetBoardRequest (common/request ::common/Response ?response-fn))]
+   ::move-response
+   {:query  '[:find ?board ?player ?position ?next-player
+              :where
+              [?response ::common/request ?request]
+              [?board ::move-request ?request]
+              [?response :response/position ?position]
+              [?request :request/marker ?marker]
+              [?player ::marker ?marker]
+              [?board ::player ?next-player]
+              [(not= ?player ?next-player)]]
+    :rhs-fn (fn [?board ?player ?position ?next-player]
+              [{:unconditional? true
+                :db/id      [::position ?position]
+                ::played-by ?player}
+               {:unconditional? true
+                :db/id           ?board
+                ::current-player ?next-player}])}
 
-  [::reset-board-response!
-   "Handle response for game reset, retract all existing ::Move's,
-    make :x the ::CurrentPlayer."
-   [?request <- ::ResetBoardRequest]
-   [::common/Response (= ?request Request)]
-   [?moves <- (acc/all) :from [::Move]]
-   [?current-player <- ::CurrentPlayer]
-   =>
-   (apply rules/retract! ::Move ?moves)
-   (rules/upsert! ::CurrentPlayer ?current-player assoc ::player :x)])
+   ::reset-request
+   {:query '[:find ?board ?response-fn
+             :where
+             [?board ::current-player ?player]
+             [?player ::marker :o]
+             [?board ::empty-squares ?squares]
+             [(count ?squares) ?n]
+             [(< ?n 9)]
+             [?board ::response-fn ?response-fn]]
+    :rhs-fn (fn [?board ?response-fn]
+              [{:db/id ?board
+                ::reset-request {:request/board ?board
+                                 ::common/response-fn ?response-fn}}])}
 
-(defqueries queries
-  [::move-request [:?position :?player] [?request <- ::MoveRequest (= ?position position) (= ?player player)]]
-  [::reset-request [] [?request <- ::ResetBoardRequest]]
-  [::current-player [] [::CurrentPlayer (= ?player player)]]
-  [::move [:?position] [?move <- ::Move (= ?position position) (= ?player player)]]
-  [::winner [] [?winner <- ::Winner (= ?player player)]]
-  [::winning-square [:?position] [?winning-square <- ::WinningSquare (= ?position position)]]
-  [::game-over [] [?game-over <- ::GameOver]])
+   ::reset-response
+   {:query '[:find ?board
+             :where
+             [?board ::reset-request ?request]
+             [?response ::common/request ?request]]
+    :rhs-fn (fn [?board]
+              [[:db/retractEntity ?board]
+               (assoc initial-board :unconditional? true)])}})
 
-(defsession session [#_common/rules rules queries])
+#_(defqueries queries
+              [::move-request [:?position :?player] [?request <- ::MoveRequest (= ?position position) (= ?player player)]]
+              [::reset-request [] [?request <- ::ResetBoardRequest]]
+              [::current-player [] [::CurrentPlayer (= ?player player)]]
+              [::move [:?position] [?move <- ::Move (= ?position position) (= ?player player)]]
+              [::winner [] [?winner <- ::Winner (= ?player player)]]
+              [::winning-square [:?position] [?winning-square <- ::WinningSquare (= ?position position)]]
+              [::game-over [] [?game-over <- ::GameOver]])
+
+#_(defsession session [#_common/rules rules queries])

@@ -1,0 +1,11 @@
+{:paths   ["src"]
+ :deps    {org.clojure/clojure       {:mvn/version "1.9.0"}
+           org.clojure/clojurescript {:mvn/version "1.10.238"}
+           org.clojure/spec.alpha    {:mvn/version "0.2.176"}
+           org.clojure/core.async    {:mvn/version "0.3.465"}
+           org.clojure/test.check    {:mvn/version "0.9.0"}
+           datascript                {:mvn/version "0.17.1"}
+           rum                       {:mvn/version "0.11.0"}
+           thheller/shadow-cljs      {:mvn/version "2.2.25"}
+           provisdom/maali           {:local/root "/home/dave/projects/maali/"}}
+ :aliases {:dev {:extra-paths ["siderail"]}}}
